@@ -9,31 +9,20 @@ var wraper = require('./lib/wraper');
 var path = require('path');
 var debug = require('debug')('cube:init');
 
-/*
-function debugRegister(cube, module) {
-  if (!debug) {
-    return;
-  }
-  console.log('load debug processor', module);
-  try {
-    cube.register(module);
-  } catch (e) {
-    // do nothing
-  }
-}
-*/
 
 function loadDefaultProcessor(cube) {
-  cube.register(path.join(__dirname, './lib/processor_js'));
-  cube.register(path.join(__dirname, './lib/processor_css'));
-  cube.register(path.join(__dirname, './lib/processor_html'));
+  cube.register('.js', path.join(__dirname, './lib/processor_js'));
+  cube.register('.css', path.join(__dirname, './lib/processor_css'));
+  cube.register('.html', path.join(__dirname, './lib/processor_html'));
 }
 /**
  * [Cube description]
  * @param {Object} config
+ *        ## for cli useage
  *        - root {Path}
  *        - port {String} [optional] server port
  *        - router {String} [optional] set the app.use(`$router`, cube_middleware)
+ *
  *        - release {Boolean} if build project, set true
  *        - processors {Array} [optional] set the extenal processors
  *        - resBase {String} [optional] the http base for resource
@@ -59,16 +48,16 @@ function Cube(config) {
    *         },
    *         types: {
    *           script: {
-   *             '.js': 'js_processor',
-   *             '.coffee': 'js_processor'
+   *             '.js': ['js_processor'],
+   *             '.coffee': ['js_processor']
    *           },
    *           style: {
-   *             '.css': 'css_processor',
-   *             '.less': 'less_processor'
+   *             '.css': ['css_processor'],
+   *             '.less': ['less_processor']
    *           },
    *           template: {
-   *             '.jade': 'tpl_processor',
-   *             '.ejs': 'tpl_processor'
+   *             '.jade': ['tpl_processor'],
+   *             '.ejs': ['tpl_processor']
    *           }
    *         }
    *       }
@@ -119,82 +108,101 @@ function Cube(config) {
   loadDefaultProcessor(this);
   var self = this;
   if (config.processors) {
-    debug('loading custom processors from config', config.processors);
-    config.processors.forEach(function (processor) {
-      if (!processor) {
-        return ;
-      }
-      self.register(processor);
-    });
+    console.error('==============');
+    console.error('[ERROR] cube do not support processors property');
+    console.error('==============');
+    return;
   }
   // load ignore
-  this.ignoresRules = utils.loadIgnore(config.root);
+  // this.ignoresRules = utils.loadIgnore(config.root);
+
+  this.ignoresRules = {
+    ignore: [],
+    skip: []
+  };
 
   // loading configs from package.json:cube
   var root = config.root;
-  var pkg;
+  var cfg;
   try {
-    pkg = require(path.join(root, './package.json'));
-    console.log('[INFO] loaded static_dir\'s package.json');
+    cfg = require(path.join(root, './cube_config'));
+    console.log('[INFO] find cube_config');
   } catch (e) {
-    console.log('[WARN] loading static_dir\'s package.json failed');
+    console.error('==============');
+    console.error('[ERROR] cube_config not found, init cube failed');
+    console.error('==============');
+    return;
   }
-  if (pkg && pkg.cube) {
-    var anotherCfg = pkg.cube;
-    debug('loading custom processors from package.json:cube', config.processors);
-    Object.keys(anotherCfg).forEach(function (key) {
-      var cfg = anotherCfg[key];
-      switch (key) {
-        case 'processors':
-          Object.keys(cfg).forEach(function (p) {
-            self.register(cfg[p], p);
-          });
-          break;
-        case 'build':
-          cfg.skip && cfg.skip.forEach(function (v) {
-            if (!v) {
-              return ;
-            }
-            self.ignoresRules.skip.push(utils.genRule(v));
-          });
-          cfg.ignore && cfg.ignore.forEach(function (v) {
-            if (!v) {
-              return ;
-            }
-            self.ignoresRules.ignore.push(utils.genRule(v));
-          });
-          break;
-      }
-      config[key] = anotherCfg[key];
-    });
+  if (!cfg || Object.keys(cfg).length <= 0) {
+    console.error('==============');
+    console.error('[ERROR] cube_config is empty, init cube failed');
+    console.error('==============');
+    return;
   }
+
+
+  Object.keys(cfg).forEach(function (key) {
+    var prop = cfg[key];
+    switch (key) {
+      case 'processors':
+        Object.keys(prop).forEach(function (ext) {
+          var plist = prop[ext];
+          if (!Array.isArray(plist)) {
+            plist = [plist];
+          }
+          self.register(ext, plist);
+        });
+        break;
+      case 'build':
+        prop.skip && prop.skip.forEach(function (v) {
+          if (!v) {
+            return ;
+          }
+          self.ignoresRules.skip.push(utils.genRule(v));
+        });
+        prop.ignore && prop.ignore.forEach(function (v) {
+          if (!v) {
+            return ;
+          }
+          self.ignoresRules.ignore.push(utils.genRule(v));
+        });
+        break;
+    }
+    config[key] = prop;
+  });
+  console.log('>>', this.processors.types);
 }
 /**
  *
  * @param  {Object} config
  *         - port       listen port [optional]
  *         - connect    the connect object
- *         - root       static root
- *         - middleware  boolean, default false
+ *         - root       {Path} static root
+ *         - service    {Boolean} start cube as a service, default false, and return a middleware
  *         - processors {Array} extenal processors
- *         - cached     the cached path
- *         - built    {Boolean} if root path is built code
+ *         - cached     {Path} the cached path
+ *         - built      {Boolean} if root path is built code
  *
  */
 Cube.init = function (config) {
   var cube = new Cube(config);
   var service = require('./service');
   service.init(cube);
-  if (config.middleware) {
-    return cube.middleware;
+  if (config.service) {
+    return cube;
   }
-  return cube;
+  return cube.middleware;
 };
 
+/**
+ * 获取工具包
+ */
 Cube.getTool = function () {
   return require('./tools');
 };
-
+/**
+ * 获取文件类型
+ */
 Cube.prototype.getType = function (fpath) {
   var ext = fpath.match(/\.\w+$/);
   if (!ext) {
@@ -203,7 +211,11 @@ Cube.prototype.getType = function (fpath) {
   ext = ext[0];
   return this.processors.map[ext];
 };
-
+/**
+ * 检查排除列表
+ * @param  {[type]} absPath [description]
+ * @return {[type]}         [description]
+ */
 Cube.prototype.checkIgnore = function (absPath) {
   // console.log(absPath.substr(this.config.root.length), this.ignoresRules);
   var res = utils.checkIgnore(absPath.substr(this.config.root.length), this.ignoresRules);
@@ -212,26 +224,22 @@ Cube.prototype.checkIgnore = function (absPath) {
 };
 
 /**
- * register a processor for cube
- * @param  {String|Object} mod   mod can be a string(module path) or an mod object
- *     a module shoud contain {
- *       ext: {String|Array}
- *       type: {String}
- *       process: {Function}
- *     }
- * @param {String} ext the regist extension name
+ * 注册processor
+ *
+ * @param {String} ext 后缀名
+ * @param {Array} ps processor列表, 可以是 Array<String>, 也可以是 Array<ModuleObject>
+ *
+ * @example   '.js'  [['cube-es2015', {/* config *\/}], 'cube-react']
  */
-Cube.prototype.register = function (mod, ext) {
+Cube.prototype.register = function (ext, ps) {
   var processors = this.processors;
   var type;
-  var customProcessors;
   try {
-    customProcessors = prepareProcessor(this.config.root, mod, ext);
+    ps = prepareProcessor(this.config.root, ps, ext);
   } catch (e) {
     return console.error(e.message);
   }
-  type = customProcessors.type;
-  ext = ext || customProcessors.ext;
+  type = ps.type;
   /*
   type = Processor.type || (Processor.info ? Processor.info.type : '');
   if (!ext) {
@@ -242,24 +250,25 @@ Cube.prototype.register = function (mod, ext) {
   if (!types) {
     types = processors.types[type] = {};
   }
-  if (ext !== '.*') {
-    if (!processors.map[ext]) {
-      processors.map[ext] = type;
-    }
-    var origin = types[ext];
-    if (origin) {
-      console.log('[WARN] ' + ext + ' already register:' + getProcessNames(origin));
-      console.log('[WARN] ' + ext + ' now register:' + getProcessNames(customProcessors.processors));
-    } else {
-      types[ext] = [];
-    }
+
+  if (!processors.map[ext]) {
+    processors.map[ext] = type;
   }
+  if (!types[ext]) {
+    types[ext] = [];
+  }
+  // if (!origin) {
+  //   types[ext] = [];
+  //   console.log('[WARN] ' + ext + ' already register:' + getProcessNames(origin));
+  //   console.log('[WARN] ' + ext + ' now register:' + getProcessNames(ps.processors));
+  // }
   var processInstances = [];
   var self = this;
-  customProcessors.processors.forEach(function (p) {
+  ps.processors.forEach(function (p) {
     processInstances.push(new p(self));
   });
-  if (ext === '.*') {
+
+  if (ext === '*') {
     Object.keys(types).forEach(function (key) {
       types[key] = types[key].concat(processInstances);
     });
@@ -298,7 +307,7 @@ function getProcessNames(processor) {
   return res.join('|');
 }
 /**
- * [prepareProcessor description]
+ * 检查processors 配置
  * @param  {String|Array} processor
  * @param  {String} ext the file extname
  * @return {[type]}           [description]
@@ -310,7 +319,6 @@ function prepareProcessor(root, processor, ext) {
   }
   var type = null;
   var processorList = [];
-  var typeList = [];
   utils.fixProcessorPath(root, processor);
   processor.forEach(function (mod) {
     var p;
@@ -337,10 +345,9 @@ function prepareProcessor(root, processor, ext) {
       type = p.type;
     } else {
       if (type !== p.type) {
-        throw new Error('[CUBE_ERROR] more then one type of process find in `' + ext + '` config, processors:' + processorList.join(',') + ' types:' + typeList.join(','));
+        throw new Error('[CUBE_ERROR] more then one type of process find in `' + ext + '` config, processors:' + processorList.join(',') + ' types:' + type + ',' + p.type);
       }
     }
-    typeList.push(type);
     res.push(p);
   });
   return {type: type, ext: ext, processors: res};

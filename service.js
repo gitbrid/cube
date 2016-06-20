@@ -136,15 +136,9 @@ function mergeRequire(cube, result, arr, parents, done) {
 }
 
 /**
- * init cube
+ * init service
  *
- * the config is from cube.config
- *         - port       listen port [optional]
- *         - connect    the connect object
- *         - root       static root
- *         - middleware  boolean, default false
- *         - cached     the cached path
- *         - built    if code is built, set to true, working as a static server, default false
+ * @param {Cube} cube instance
  */
 exports.init = function (cube) {
   var config = cube.config;
@@ -168,6 +162,7 @@ exports.init = function (cube) {
   serveStatic = connectStatic(config.cached ? config.cached : config.root, {
     maxAge: config.maxAge
   });
+
 
   function processQuery(req, res, next) {
     var q = url.parse(req.url, true);
